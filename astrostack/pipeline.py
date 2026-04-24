@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 def _ensure_same_shape(ref: np.ndarray, arr: np.ndarray) -> np.ndarray:
     if arr.shape == ref.shape:
         return arr
+    ref_hw = ref.shape[:2]
+    arr_hw = arr.shape[:2]
+    if ref_hw != arr_hw:
+        raise ValueError(
+            f"Frame resolution {arr_hw} does not match reference {ref_hw}. "
+            "All light frames must share the same dimensions."
+        )
     if arr.ndim == 2 and ref.ndim == 3:
         return np.stack([arr] * ref.shape[2], axis=-1)
     if arr.ndim == 3 and ref.ndim == 2:

@@ -14,6 +14,7 @@ import numpy as np
 
 from .device import select_device
 from .editor import DEFAULTS, adjust
+from .guide import GUIDE_MARKDOWN, QUICK_HELP_EDITOR, QUICK_HELP_STACK
 from .io import is_supported, load_image, save_image
 from .pipeline import run_pipeline
 
@@ -176,7 +177,8 @@ def build_ui() -> gr.Blocks:
             "# astrostack\n"
             "Local AI astronomy image stacker — calibrate, align, stack, "
             "enhance, and edit.\n"
-            f"**Detected device:** `{device_default}`"
+            f"**Detected device:** `{device_default}` · "
+            "**New here?** See the **Guide** tab."
         )
 
         # Shared state: path of latest stacker output, + arrays for the editor.
@@ -187,6 +189,8 @@ def build_ui() -> gr.Blocks:
         with gr.Tabs():
             # ---------------- Stack tab ----------------
             with gr.Tab("Stack & Enhance"):
+                with gr.Accordion("ℹ Quick help", open=False):
+                    gr.Markdown(QUICK_HELP_STACK)
                 with gr.Row():
                     with gr.Column(scale=1):
                         lights = gr.File(label="Light frames",
@@ -250,6 +254,8 @@ def build_ui() -> gr.Blocks:
 
             # ---------------- Editor tab ----------------
             with gr.Tab("Editor") as editor_tab:
+                with gr.Accordion("ℹ Quick help", open=False):
+                    gr.Markdown(QUICK_HELP_EDITOR)
                 gr.Markdown(
                     "Adjust the stacked result with classic photo controls "
                     "plus astro-specific stretch. Live preview is downsampled "
@@ -360,6 +366,10 @@ def build_ui() -> gr.Blocks:
                             export_format, export_bits],
                     outputs=[editor_download, editor_status],
                 )
+
+            # ---------------- Guide tab ----------------
+            with gr.Tab("Guide"):
+                gr.Markdown(GUIDE_MARKDOWN)
 
     return ui
 

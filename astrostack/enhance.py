@@ -1,7 +1,8 @@
 """AI enhancement of stacked images.
 
-Primary: Real-ESRGAN (RealESRGAN_x2plus or x4plus) with weights downloaded
-from HuggingFace on first run. Tiled inference keeps memory bounded.
+Primary: Real-ESRGAN (RealESRGAN_x2plus / x4plus) with weights downloaded
+from the official xinntao/Real-ESRGAN GitHub releases on first run. Tiled
+inference keeps memory bounded.
 
 Fallback (no torch / no model / model fails): scikit-image wavelet denoise +
 unsharp mask. Always available.
@@ -20,16 +21,16 @@ log = logging.getLogger(__name__)
 
 WEIGHTS_DIR = Path.home() / ".cache" / "astrostack" / "weights"
 
-# (HuggingFace repo, filename, scale, model factory key)
+# (download_url, cached_filename, scale)
 MODEL_REGISTRY = {
     "realesrgan-x2": (
-        "ai-forever/Real-ESRGAN",
-        "RealESRGAN_x2.pth",
+        "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
+        "RealESRGAN_x2plus.pth",
         2,
     ),
     "realesrgan-x4": (
-        "ai-forever/Real-ESRGAN",
-        "RealESRGAN_x4.pth",
+        "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+        "RealESRGAN_x4plus.pth",
         4,
     ),
 }
@@ -57,18 +58,34 @@ def _classical_enhance(img: np.ndarray, denoise_strength: float = 0.05) -> np.nd
     return np.clip(work.astype(np.float32), 0.0, 1.0)
 
 
-def _download_weights(repo_id: str, filename: str) -> Path:
-    from huggingface_hub import hf_hub_download
+def _download_weights(url: str, filename: str) -> Path:
+    import torch
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
-    log.info("Downloading %s/%s ...", repo_id, filename)
-    path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=str(WEIGHTS_DIR))
-    return Path(path)
+    dest = WEIGHTS_DIR / filename
+    if not dest.exists():
+        log.info("Downloading %s -> %s", url, dest)
+        torch.hub.download_url_to_file(url, str(dest), progress=True)
+    return dest
 
 
-def _load_realesrgan(model_key: str, device: str):
+def _pick_tile(img_shape, device: str) -> int:
+    """Choose a sensible tile size. 0 disables tiling."""
+    h, w = img_shape[:2]
+    if device == "cpu":
+        # CPU is slow enough that tiling helps memory more than it hurts speed.
+        return 256 if max(h, w) > 512 else 0
+    # GPU: tile only when the image would be unreasonably large.
+    if max(h, w) <= 1024:
+        return 0
+    if max(h, w) <= 2048:
+        return 512
+    return 400
+
+
+def _load_realesrgan(model_key: str, device: str, img_shape):
     """Load Real-ESRGAN, returning (upsampler, scale) or raising."""
-    repo_id, filename, scale = MODEL_REGISTRY[model_key]
-    weights = _download_weights(repo_id, filename)
+    url, filename, scale = MODEL_REGISTRY[model_key]
+    weights = _download_weights(url, filename)
 
     import torch
     from basicsr.archs.rrdbnet_arch import RRDBNet
@@ -79,11 +96,14 @@ def _load_realesrgan(model_key: str, device: str):
         num_block=23, num_grow_ch=32, scale=scale,
     )
     half = (device == "cuda")
+    tile = _pick_tile(img_shape, device)
+    log.info("Real-ESRGAN: scale=%d, device=%s, half=%s, tile=%d",
+             scale, device, half, tile)
     upsampler = RealESRGANer(
         scale=scale,
         model_path=str(weights),
         model=model,
-        tile=512,
+        tile=tile,
         tile_pad=16,
         pre_pad=0,
         half=half,
@@ -109,9 +129,11 @@ def enhance(
         img_in = img
 
     try:
-        upsampler, scale = _load_realesrgan(model, dev)
+        upsampler, scale = _load_realesrgan(model, dev, img_in.shape)
         bgr = (img_in[..., ::-1] * 255.0).clip(0, 255).astype(np.uint8)
         out_bgr, _ = upsampler.enhance(bgr, outscale=scale)
+        if out_bgr is None:
+            raise RuntimeError("Real-ESRGAN returned no output.")
         out = out_bgr[..., ::-1].astype(np.float32) / 255.0
         if not is_color:
             out = out.mean(axis=-1)
