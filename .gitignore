@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Outputs and caches
+*.fits.bak
+*.tmp
+.cache/
+weights/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,140 @@
+"""Multi-format image I/O.
+
+Supports:
+    - 8/16-bit JPEG, PNG, TIFF (via Pillow / tifffile / imageio)
+    - Camera RAW: CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, etc. (via rawpy)
+    - FITS (via astropy.io.fits)
+
+All loaders return float32 arrays in [0, 1] with shape (H, W) for mono or
+(H, W, 3) for color. Saving preserves dtype where reasonable.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+
+RAW_EXTS = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf",
+            ".orf", ".rw2", ".pef", ".srw", ".kdc", ".3fr"}
+FITS_EXTS = {".fits", ".fit", ".fts"}
+TIFF_EXTS = {".tif", ".tiff"}
+LDR_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+SUPPORTED_EXTS = RAW_EXTS | FITS_EXTS | TIFF_EXTS | LDR_EXTS
+
+
+def _to_float01(arr: np.ndarray) -> np.ndarray:
+    arr = np.asarray(arr)
+    if arr.dtype == np.uint8:
+        return arr.astype(np.float32) / 255.0
+    if arr.dtype == np.uint16:
+        return arr.astype(np.float32) / 65535.0
+    arr = arr.astype(np.float32)
+    mn, mx = float(arr.min()), float(arr.max())
+    if mx > 1.0 + 1e-6:
+        if mx <= 255.0:
+            arr = arr / 255.0
+        elif mx <= 65535.0:
+            arr = arr / 65535.0
+        else:
+            arr = (arr - mn) / max(mx - mn, 1e-9)
+    return np.clip(arr, 0.0, 1.0)
+
+
+def load_image(path: str | Path) -> np.ndarray:
+    """Load an image as float32 in [0, 1]. Returns (H, W) or (H, W, 3)."""
+    p = Path(path)
+    ext = p.suffix.lower()
+
+    if ext in RAW_EXTS:
+        import rawpy
+        with rawpy.imread(str(p)) as raw:
+            rgb = raw.postprocess(
+                output_bps=16,
+                no_auto_bright=True,
+                use_camera_wb=True,
+                gamma=(1, 1),
+            )
+        return _to_float01(rgb)
+
+    if ext in FITS_EXTS:
+        from astropy.io import fits
+        with fits.open(str(p), memmap=False) as hdul:
+            data = None
+            for hdu in hdul:
+                if hdu.data is not None:
+                    data = np.asarray(hdu.data)
+                    break
+            if data is None:
+                raise ValueError(f"No image data in FITS file: {p}")
+        if data.ndim == 3 and data.shape[0] in (3, 4):
+            data = np.transpose(data, (1, 2, 0))
+            if data.shape[2] == 4:
+                data = data[..., :3]
+        return _to_float01(data)
+
+    if ext in TIFF_EXTS:
+        import tifffile
+        data = tifffile.imread(str(p))
+        if data.ndim == 3 and data.shape[2] == 4:
+            data = data[..., :3]
+        return _to_float01(data)
+
+    if ext in LDR_EXTS:
+        from PIL import Image
+        img = Image.open(p)
+        if img.mode not in ("L", "RGB", "I;16"):
+            img = img.convert("RGB")
+        data = np.array(img)
+        return _to_float01(data)
+
+    raise ValueError(f"Unsupported image extension: {ext}")
+
+
+def save_image(path: str | Path, arr: np.ndarray, bit_depth: int = 16) -> None:
+    """Save a float [0, 1] image. Output format from extension.
+
+    bit_depth: 8 or 16 (only honored for PNG/TIFF; JPEG is always 8-bit).
+    """
+    p = Path(path)
+    ext = p.suffix.lower()
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    arr = np.clip(np.asarray(arr, dtype=np.float32), 0.0, 1.0)
+
+    if ext in FITS_EXTS:
+        from astropy.io import fits
+        if arr.ndim == 3:
+            out = np.transpose(arr, (2, 0, 1)).astype(np.float32)
+        else:
+            out = arr.astype(np.float32)
+        fits.writeto(str(p), out, overwrite=True)
+        return
+
+    if bit_depth == 16 and ext in TIFF_EXTS | {".png"}:
+        out = (arr * 65535.0 + 0.5).astype(np.uint16)
+    else:
+        out = (arr * 255.0 + 0.5).astype(np.uint8)
+
+    if ext in TIFF_EXTS:
+        import tifffile
+        tifffile.imwrite(str(p), out)
+        return
+
+    from PIL import Image
+    if out.ndim == 2:
+        mode = "I;16" if out.dtype == np.uint16 else "L"
+    else:
+        mode = "RGB"
+    if out.dtype == np.uint16 and ext == ".png":
+        # Pillow writes 16-bit PNG only for mode I;16 (mono). For RGB 16-bit
+        # we drop to 8 to stay portable.
+        if out.ndim == 3:
+            out = (arr * 255.0 + 0.5).astype(np.uint8)
+            mode = "RGB"
+    Image.fromarray(out, mode=mode).save(str(p))
+
+
+def is_supported(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in SUPPORTED_EXTS
