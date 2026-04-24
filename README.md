@@ -39,8 +39,16 @@ astrostack-ui          # opens http://127.0.0.1:7860
 astrostack-ui --share  # public Gradio link
 ```
 
-Drop in your light frames (and optional darks/flats/bias), pick a stacking
-method and AI model, hit **Stack & Enhance**, and preview/download the result.
+Two tabs:
+
+- **Stack & Enhance** — drop in light frames (and optional darks/flats/bias),
+  pick a stacking method and AI model, hit run, preview and download.
+- **Editor** — post-process the stacked result (or any uploaded image) with
+  brightness, contrast, saturation, gamma, black/white levels, asinh
+  (astro-friendly faint-detail) stretch, and sharpen. Live preview is
+  downsampled for responsiveness; **Export** applies the edits at full
+  resolution. Use **Open in Editor →** on the Stack tab to send the result
+  straight over.
 
 ## Quick start (CLI)
 
