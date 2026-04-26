@@ -6,21 +6,35 @@ QUICK_HELP_STACK = """\
 **Quick help — stacking**
 
 1. Drop **light frames** (your sky images) into the top uploader. 5–50+ is typical.
-2. (Optional) expand **Calibration frames** and add matching darks, flats, bias.
-3. Leave defaults (`sigma` method, `3.0`, align ON, Real-ESRGAN x2 ON) unless you know better.
-4. Click **Stack & Enhance**. First run downloads the model (~65 MB).
-5. Preview + download appear on the right. Click **Open in Editor →** to post-process.
+   Capture-software thumbnails (`_thn.jpg`, `_preview`, `_screen`, etc.) are
+   auto-skipped.
+2. (Optional) **Analyze loaded frames** — runs star detection + FWHM on each
+   frame so you can pick the best ones or detect duds.
+3. (Optional) expand **Calibration frames** and add matching darks, flats, bias.
+4. Leave defaults (`sigma`, `3.0`, align ON, Real-ESRGAN x2 ON) unless you know better.
+5. Click **Stack & Enhance**. First run downloads the model (~65 MB).
+   **Cancel** kills an in-flight stack.
+6. Two previews appear: **pre-enhance** (stack-only) and **final** (post-AI).
+   Click **Open in Editor →** to post-process.
 
-See the **Guide** tab for a full walkthrough.
+Settings (method, sigma, model, device, format) persist between sessions.
 """
 
 QUICK_HELP_EDITOR = """\
 **Quick help — editor**
 
-- Sliders apply to a downsampled preview for speed. **Export full-resolution** re-renders at full size.
-- **Asinh stretch** is the astro-magic slider — reveals faint nebulosity.
-- **Black/White point** clips and rescales the histogram; use together to boost contrast on faint data.
-- **Reset adjustments** restores identity.
+- **Auto stretch** sets black/white/asinh from the histogram percentiles.
+- **Neutralize background** evens out a colour cast (e.g. light pollution)
+  by sampling the dimmest pixels per channel.
+- **Built-in presets** (Gentle / Standard / Aggressive / Extreme) are
+  one-click starting points.
+- **Save** the current slider values as a named user preset; load any time.
+- **Per-channel R/G/B levels** sit in an accordion under the main levels.
+- **Histogram** shows per-channel distribution with current black/white as
+  dashed lines.
+- **Show original (Before)** flips the preview to the unedited image.
+- **Crop** sliders trim margins as percentages.
+- **Export full-resolution** re-runs the chain on the full-size image.
 
 See the **Guide** tab for what each control does.
 """
@@ -126,11 +140,22 @@ Multiple files of each kind are automatically median-combined into a master.
 - **Bit depth**: 16-bit is honoured for PNG (mono only) and TIFF. JPG and
   BMP are 8-bit by format.
 
+### Frame quality analysis (optional)
+Click **Analyze loaded frames** under the Lights uploader. For each file
+the table shows star count, FWHM (in pixels, lower = sharper), background
+level, and a quality score (`stars / FWHM`). Use it to drop bad frames or
+choose your reference.
+
 ### After stacking
-- Preview on the right shows the result. For FITS output, a PNG preview is
-  auto-generated since browsers can't display FITS.
+- Two previews appear side-by-side: **pre-enhance** (stack only) and the
+  **final** post-AI image. For FITS output, a PNG preview is auto-generated.
 - **Download full-resolution result** gives you the file.
 - **Open in Editor →** pushes the stacked image to the Editor tab.
+- **Cancel** stops a long stack mid-run.
+
+Settings (algorithm, sigma, AI model, device, format, bit depth) are
+persisted in `~/.config/astrostack/settings.json` and reloaded on next
+launch.
 
 ---
 
@@ -140,21 +165,42 @@ Non-destructive post-processing. Sliders affect a downsampled live preview
 for responsiveness; the final **Export full-resolution** button applies the
 identical chain at full size.
 
-Pipeline order (all stages skip cleanly at their identity value):
+### Quick wins
+
+- **Auto stretch** — sets `black point`, `white point`, and a starter
+  `asinh` from histogram percentiles. Best one-click starting point.
+- **Neutralize background** — finds the per-channel background level from
+  the dimmest 1% of pixels and offsets the per-channel black points so the
+  background reads as neutral grey. Removes light-pollution colour casts.
+- **Built-in presets** dropdown — `None` / `Gentle` / `Standard` /
+  `Aggressive` / `Extreme`. Each writes a tuned set of slider values.
+- **User presets** — save the current slider state with a name; load or
+  delete any time. Stored at `~/.config/astrostack/presets.json`.
+- **Show original (Before)** — flips the preview to the unedited image
+  for an instant before/after compare.
+- **Histogram** — live per-channel histogram with current black/white
+  drawn as dashed lines.
+
+### Adjustment chain order
+
+All stages are identity at their default values:
 
 1. **Levels — black point / white point** — clips and rescales the
-   histogram. Pull black up to kill background fog; pull white down to let
-   bright cores bloom.
+   histogram. Per-channel R/G/B black/white offsets sit in the
+   *Per-channel levels (RGB)* accordion and stack on top of the global
+   values.
 2. **Asinh stretch** — inverse-hyperbolic-sine compression. `0` = identity,
-   `1` = aggressive. This is the single most useful astro control: it
-   brightens faint nebulosity without blowing out stars. Try `0.4` first.
-3. **Gamma** — power curve. `<1` brightens shadows, `>1` darkens them.
+   `1` = aggressive. Single most useful astro control.
+3. **Gamma** — power curve. `<1` brightens shadows, `>1` darkens.
 4. **Brightness** — additive offset in `[-0.5, 0.5]`.
 5. **Contrast** — multiplier around mid-grey. `1` = identity.
 6. **Saturation** — `0` = grayscale, `1` = identity, `>1` boosts colour.
-   Ignored on mono images.
-7. **Sharpen** — unsharp mask amount. `0` = off. Above `1.5` starts showing
-   ringing on bright stars.
+7. **Star size reduction** — shrinks small bright objects via masked
+   morphological erosion. Useful in dense star fields where stars
+   overpower nebulosity.
+8. **Sharpen** — unsharp mask amount. Above `1.5` starts ringing on
+   bright stars.
+9. **Crop** — margin percentages from each edge.
 
 **Reset adjustments** puts all sliders back to identity.
 

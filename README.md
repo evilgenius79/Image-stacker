@@ -34,20 +34,29 @@ GPU acceleration when available and a classical CPU fallback when not.
 
 - **Multi-format I/O**: JPEG, PNG, BMP, WebP, TIFF (8/16-bit), FITS, and
   camera RAW (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF, SRW, KDC, 3FR).
+- **Auto-skip** capture-software thumbnails (`_thn`, `_thumb`, `_preview`,
+  `_screen`, `_small`) so they don't sneak into the stack.
 - **Optional calibration** with master darks, bias, and flats (multiple
   frames are auto median-combined into a master).
+- **Frame quality analysis**: per-frame star count and FWHM via
+  `DAOStarFinder` + Gaussian fit, with a quality score.
 - **Star-pattern alignment** via `astroalign`, with sub-pixel phase
   correlation as a fallback when star detection fails.
-- **Stacking**: mean, median, or sigma-clipped mean (default; best outlier
-  rejection).
+- **Stacking**: mean, median, or sigma-clipped mean (default).
 - **AI enhancement**: Real-ESRGAN x2 / x4 with weights downloaded on first
   use. Automatic CPU fallback to wavelet denoise + unsharp mask.
 - **Device selection**: CUDA, Apple MPS, or CPU (`auto` picks the best).
-- **Adaptive tiling** so big stacks don't blow out GPU VRAM.
-- **Built-in editor**: brightness, contrast, saturation, gamma, black/white
-  levels, asinh stretch (astro-friendly faint-detail boost), and sharpen —
-  all with a live preview and full-resolution export.
+- **Side-by-side preview**: see pre-enhance and post-AI results next to
+  each other; cancel a long stack mid-run.
+- **Persistent settings**: stack method, model, device, format, etc. are
+  remembered between sessions.
+- **Editor**: live preview with histogram, before/after toggle,
+  brightness/contrast/saturation, gamma, black/white levels (global +
+  per-R/G/B), asinh stretch, **auto stretch**, **background neutralization**,
+  star-size reduction, sharpen, crop, built-in stretch presets, and
+  user-saved presets.
 - **In-page Guide tab** documenting every control.
+- **Dark theme** by default; `astrostack-ui --light` to opt out.
 
 ---
 
