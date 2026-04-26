@@ -24,19 +24,6 @@ def _is_color(img: np.ndarray) -> bool:
     return img.ndim == 3 and img.shape[2] >= 3
 
 
-def _per_channel(img: np.ndarray, vals: list[float] | tuple[float, ...] | float):
-    """Broadcast a scalar or per-channel list/tuple to (1, 1, C) for color or scalar for mono."""
-    if not _is_color(img):
-        if hasattr(vals, "__len__"):
-            return float(np.mean(vals))
-        return float(vals)
-    if hasattr(vals, "__len__"):
-        arr = np.asarray(vals[: img.shape[2]], dtype=np.float32)
-    else:
-        arr = np.full(img.shape[2], float(vals), dtype=np.float32)
-    return arr.reshape(1, 1, -1)
-
-
 # ---------------------------------------------------------------------------
 # Individual stages
 # ---------------------------------------------------------------------------
@@ -187,8 +174,8 @@ def compute_background_offsets(
         # at 0 offset; this avoids globally darkening the image.
         baseline = min(offsets)
         return tuple(o - baseline for o in offsets[:3])  # type: ignore[return-value]
-    v = float(np.percentile(img, percentile))
-    return (0.0, 0.0, 0.0)  # nothing to neutralize on mono
+    # Mono: nothing to neutralize (no per-channel cast to balance).
+    return (0.0, 0.0, 0.0)
 
 
 # ---------------------------------------------------------------------------

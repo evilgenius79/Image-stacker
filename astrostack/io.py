@@ -11,9 +11,12 @@ All loaders return float32 arrays in [0, 1] with shape (H, W) for mono or
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 RAW_EXTS = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf",
             ".orf", ".rw2", ".pef", ".srw", ".kdc", ".3fr"}
@@ -136,8 +139,10 @@ def save_image(path: str | Path, arr: np.ndarray, bit_depth: int = 16) -> None:
         mode = "RGB"
     if out.dtype == np.uint16 and ext == ".png":
         # Pillow writes 16-bit PNG only for mode I;16 (mono). For RGB 16-bit
-        # we drop to 8 to stay portable.
+        # we drop to 8 to stay portable; warn so the user knows.
         if out.ndim == 3:
+            log.warning("16-bit RGB PNG isn't portable; saving 8-bit. "
+                        "Use TIFF if you need 16-bit RGB.")
             out = (arr * 255.0 + 0.5).astype(np.uint8)
             mode = "RGB"
     Image.fromarray(out, mode=mode).save(str(p))

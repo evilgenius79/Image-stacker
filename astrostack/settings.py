@@ -65,9 +65,32 @@ def save_settings(values: dict) -> None:
 
 
 def load_user_presets() -> dict[str, dict]:
-    """User-saved editor presets keyed by name."""
+    """User-saved editor presets keyed by name.
+
+    Defends against hand-edited JSON: drops any preset whose values aren't
+    all numeric, since they're applied via float() to slider state.
+    """
     data = _load_json(PRESETS_FILE, {})
-    return {k: v for k, v in data.items() if isinstance(v, dict)}
+    out: dict[str, dict] = {}
+    for name, payload in data.items():
+        if not isinstance(name, str) or not isinstance(payload, dict):
+            continue
+        clean: dict = {}
+        ok = True
+        for key, val in payload.items():
+            if not isinstance(key, str):
+                ok = False
+                break
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                # bool is a subclass of int — exclude it explicitly.
+                ok = False
+                break
+            clean[key] = float(val)
+        if ok:
+            out[name] = clean
+        else:
+            log.warning("Skipping malformed preset %r in %s", name, PRESETS_FILE)
+    return out
 
 
 def save_user_preset(name: str, values: dict) -> dict[str, dict]:

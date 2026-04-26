@@ -80,8 +80,20 @@ def _pick_tile(img_shape, device: str) -> int:
     return 400
 
 
+_MODEL_CACHE: dict = {}
+
+
 def _load_model(weights_path: Path, device: str):
-    """Load weights via spandrel; returns a callable wrapper on (B,C,H,W) tensors."""
+    """Load weights via spandrel; returns a callable wrapper on (B,C,H,W) tensors.
+
+    Caches by (weights_path, device) so back-to-back stacks reuse the loaded
+    descriptor instead of paying disk + deserialize cost each time.
+    """
+    cache_key = (str(weights_path), device)
+    cached = _MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     import torch
     from spandrel import ModelLoader
 
@@ -90,6 +102,8 @@ def _load_model(weights_path: Path, device: str):
     descriptor.eval()
     if device == "cuda":
         descriptor.model.half()
+
+    _MODEL_CACHE[cache_key] = descriptor
     return descriptor
 
 

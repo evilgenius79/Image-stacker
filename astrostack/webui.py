@@ -10,13 +10,15 @@ import tempfile
 from pathlib import Path
 
 import gradio as gr
+import matplotlib
+matplotlib.use("Agg")  # must run before any pyplot import anywhere
 import numpy as np
 
 from .device import select_device
 from .editor import (DEFAULTS, PRESETS, adjust, apply_preset, auto_stretch,
                      compute_background_offsets)
 from .guide import GUIDE_MARKDOWN, QUICK_HELP_EDITOR, QUICK_HELP_STACK
-from .io import is_supported, is_thumbnail, is_usable_input, load_image, save_image
+from .io import is_supported, is_thumbnail, load_image, save_image
 from .pipeline import run_pipeline
 from .quality import TABLE_HEADERS, analyze_paths, stats_to_table
 from .settings import (delete_user_preset, load_settings, load_user_presets,
@@ -202,7 +204,7 @@ def _apply_builtin_preset(name: str):
     return _values_from_dict(apply_preset(name))
 
 
-def _apply_user_preset(name: str, current_values):
+def _apply_user_preset(name: str, *current_values):
     """Load a user preset; fall back to current values if name unknown."""
     presets = load_user_presets()
     if name and name in presets:
@@ -263,9 +265,10 @@ def _do_auto_stretch(preview_arr, *slider_values):
 
 
 def _render_histogram(preview_arr, black, white, b_r, b_g, b_b, w_r, w_g, w_b):
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    # Close any prior figures from earlier calls to bound pyplot's global
+    # registry. The new figure we return below is owned by Gradio.
+    plt.close("all")
     fig, ax = plt.subplots(figsize=(6, 2.4))
     if preview_arr is None:
         ax.set_title("No image loaded")
