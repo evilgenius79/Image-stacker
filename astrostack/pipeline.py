@@ -51,7 +51,15 @@ def run_pipeline(
     device: str = "auto",
     bit_depth: int = 16,
     save_intermediate: bool = False,
-) -> Path:
+    return_arrays: bool = False,
+):
+    """Run the full pipeline.
+
+    Returns the output Path by default. If ``return_arrays`` is True,
+    returns a dict ``{"output": Path, "stacked": ndarray, "enhanced": ndarray|None}``
+    with both the pre-enhancement stack and the final enhanced result so the
+    caller can preview before/after.
+    """
     if len(light_paths) < 1:
         raise ValueError("Need at least one light frame.")
 
@@ -94,12 +102,17 @@ def run_pipeline(
         save_image(intermediate, stacked, bit_depth=bit_depth)
         log.info("Wrote pre-enhancement stack: %s", intermediate)
 
+    enhanced = None
     if enhance:
         log.info("Running AI enhancement (%s) ...", enhance_model)
-        result = enhance_image(stacked, model=enhance_model, device=device)
+        enhanced = enhance_image(stacked, model=enhance_model, device=device)
+        result = enhanced
     else:
         result = stacked
 
     save_image(output, result, bit_depth=bit_depth)
     log.info("Wrote: %s", output)
+
+    if return_arrays:
+        return {"output": output, "stacked": stacked, "enhanced": enhanced}
     return output

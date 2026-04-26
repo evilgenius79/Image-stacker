@@ -8,25 +8,36 @@ from pathlib import Path
 
 import click
 
-from .io import SUPPORTED_EXTS, is_supported
+from .io import SUPPORTED_EXTS, is_supported, is_thumbnail, is_usable_input
 from .pipeline import run_pipeline
 
 
-def _expand(paths: tuple[str, ...]) -> list[Path]:
+def _expand(paths: tuple[str, ...], skip_thumbnails: bool = True) -> list[Path]:
     """Expand a list of file or directory paths into supported image files."""
     out: list[Path] = []
+    skipped_thumbs: list[Path] = []
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
             for child in sorted(p.iterdir()):
-                if child.is_file() and is_supported(child):
-                    out.append(child)
+                if not (child.is_file() and is_supported(child)):
+                    continue
+                if skip_thumbnails and is_thumbnail(child):
+                    skipped_thumbs.append(child)
+                    continue
+                out.append(child)
         elif p.is_file() and is_supported(p):
-            out.append(p)
+            if skip_thumbnails and is_thumbnail(p):
+                skipped_thumbs.append(p)
+            else:
+                out.append(p)
         elif p.is_file():
             click.echo(f"Skipping unsupported file: {p}", err=True)
         else:
             click.echo(f"Path not found: {p}", err=True)
+    if skipped_thumbs:
+        click.echo(f"Skipped {len(skipped_thumbs)} thumbnail file(s) "
+                   f"(use --include-thumbnails to keep them).", err=True)
     return out
 
 
@@ -61,12 +72,14 @@ def _expand(paths: tuple[str, ...]) -> list[Path]:
               show_default=True, help="Output bit depth (PNG/TIFF).")
 @click.option("--save-intermediate", is_flag=True,
               help="Also save the pre-enhancement stack.")
+@click.option("--include-thumbnails", is_flag=True,
+              help="Don't auto-skip files that look like capture-software thumbnails.")
 @click.option("-v", "--verbose", count=True, help="Increase log verbosity.")
 def main(
     inputs, output, darks, bias, flats,
     stack_method, sigma, sigma_iters,
     no_align, no_enhance, enhance_model, device,
-    bit_depth, save_intermediate, verbose,
+    bit_depth, save_intermediate, include_thumbnails, verbose,
 ):
     """Stack and AI-enhance astronomy images.
 
@@ -76,15 +89,16 @@ def main(
     level = logging.WARNING - 10 * min(verbose, 2)
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
-    light_paths = _expand(inputs)
+    skip_thumbs = not include_thumbnails
+    light_paths = _expand(inputs, skip_thumbnails=skip_thumbs)
     if not light_paths:
         click.echo("No supported input images found. Supported extensions: "
                    + ", ".join(sorted(SUPPORTED_EXTS)), err=True)
         sys.exit(1)
 
-    dark_paths = _expand(darks) or None
-    bias_paths = _expand(bias) or None
-    flat_paths = _expand(flats) or None
+    dark_paths = _expand(darks, skip_thumbnails=skip_thumbs) or None
+    bias_paths = _expand(bias, skip_thumbnails=skip_thumbs) or None
+    flat_paths = _expand(flats, skip_thumbnails=skip_thumbs) or None
 
     click.echo(f"Lights: {len(light_paths)} | Darks: {len(dark_paths or [])} | "
                f"Bias: {len(bias_paths or [])} | Flats: {len(flat_paths or [])}")

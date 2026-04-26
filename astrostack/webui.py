@@ -15,7 +15,7 @@ import numpy as np
 from .device import select_device
 from .editor import DEFAULTS, adjust
 from .guide import GUIDE_MARKDOWN, QUICK_HELP_EDITOR, QUICK_HELP_STACK
-from .io import is_supported, load_image, save_image
+from .io import is_supported, is_thumbnail, is_usable_input, load_image, save_image
 from .pipeline import run_pipeline
 
 log = logging.getLogger(__name__)
@@ -27,11 +27,18 @@ def _collect(files) -> list[Path]:
     if not files:
         return []
     out: list[Path] = []
+    skipped_thumbs = 0
     for f in files:
         name = f.name if hasattr(f, "name") else f
         p = Path(name)
-        if p.is_file() and is_supported(p):
-            out.append(p)
+        if not (p.is_file() and is_supported(p)):
+            continue
+        if is_thumbnail(p):
+            skipped_thumbs += 1
+            continue
+        out.append(p)
+    if skipped_thumbs:
+        log.info("Skipped %d thumbnail file(s).", skipped_thumbs)
     return out
 
 
