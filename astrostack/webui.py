@@ -346,14 +346,93 @@ FORCE_DARK_JS = """
 """
 
 DARK_CSS = """
+/* Astrostack dark overrides — aggressive enough to win against Gradio 6
+ * component defaults that don't always pick up ?__theme=dark uniformly. */
+
 :root, body, .gradio-container {
   --background-fill-primary: #0e1116;
   --background-fill-secondary: #161b22;
+  --background-fill-primary_dark: #0e1116;
+  --background-fill-secondary_dark: #161b22;
+  --block-background-fill: #161b22;
+  --block-background-fill_dark: #161b22;
+  --body-background-fill: #0b0d12;
+  --body-background-fill_dark: #0b0d12;
+  --input-background-fill: #0e1116;
+  --input-background-fill_dark: #0e1116;
   --color-accent-soft: #1f2733;
   --border-color-primary: #2a3441;
+  --border-color-primary_dark: #2a3441;
+  --body-text-color: #e5e7eb;
+  --body-text-color_dark: #e5e7eb;
+  color-scheme: dark;
 }
-.gradio-container { background: #0b0d12 !important; }
-.dark .gradio-container { background: #0b0d12 !important; }
+
+body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !important; }
+.gradio-container, .gradio-container * { color-scheme: dark; }
+
+/* Generic blocks / forms / accordions / panels */
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .gr-block,
+.gradio-container .gr-form,
+.gradio-container .gr-panel,
+.gradio-container details,
+.gradio-container .accordion,
+.gradio-container .label-wrap,
+.gradio-container .wrap {
+  background: #161b22 !important;
+  border-color: #2a3441 !important;
+  color: #e5e7eb !important;
+}
+
+/* Accordion headers (collapsible sections) */
+.gradio-container summary,
+.gradio-container .label-wrap > .label,
+.gradio-container .accordion .label-wrap {
+  background: #1a212b !important;
+  color: #e5e7eb !important;
+}
+
+/* Inputs / textareas / selects */
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select,
+.gradio-container .input-text {
+  background: #0e1116 !important;
+  color: #e5e7eb !important;
+  border-color: #2a3441 !important;
+}
+
+/* Tables */
+.gradio-container table,
+.gradio-container thead,
+.gradio-container tbody,
+.gradio-container tr,
+.gradio-container td,
+.gradio-container th {
+  background: #161b22 !important;
+  color: #e5e7eb !important;
+  border-color: #2a3441 !important;
+}
+
+/* File upload list — cap height so a long upload list scrolls inside
+ * the component instead of pushing the rest of the page off-screen. */
+.gradio-container .file-preview,
+.gradio-container [data-testid="file"] .preview-wrap,
+.gradio-container .file-preview-holder,
+.gradio-container .gr-file-preview,
+.gradio-container .gradio-file .preview {
+  max-height: 240px !important;
+  overflow-y: auto !important;
+}
+
+/* Make the white "drop here" zone darker too */
+.gradio-container .upload-container,
+.gradio-container .file-upload {
+  background: #0e1116 !important;
+}
 """
 
 
@@ -388,7 +467,8 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                 with gr.Row():
                     with gr.Column(scale=1):
                         lights = gr.File(label="Light frames",
-                                         file_count="multiple")
+                                         file_count="multiple",
+                                         height=240)
                         with gr.Accordion("Frame quality analysis", open=False):
                             analyze_btn = gr.Button("Analyze loaded frames",
                                                     variant="secondary")
@@ -399,9 +479,12 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                                 label="Per-frame stars / FWHM / score")
                         with gr.Accordion("Calibration frames (optional)",
                                           open=False):
-                            darks = gr.File(label="Darks", file_count="multiple")
-                            flats = gr.File(label="Flats", file_count="multiple")
-                            bias = gr.File(label="Bias", file_count="multiple")
+                            darks = gr.File(label="Darks", file_count="multiple",
+                                            height=180)
+                            flats = gr.File(label="Flats", file_count="multiple",
+                                            height=180)
+                            bias = gr.File(label="Bias", file_count="multiple",
+                                           height=180)
 
                         with gr.Accordion("Stacking", open=True):
                             method = gr.Radio(
