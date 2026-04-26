@@ -361,11 +361,12 @@ def build_ui(dark: bool = True) -> gr.Blocks:
     device_default = select_device("auto")
     s = load_settings()
 
-    blocks_kwargs = dict(title="astrostack", css=DARK_CSS if dark else None)
-    if dark:
-        blocks_kwargs["js"] = FORCE_DARK_JS
+    # NOTE: css/js/theme moved from Blocks() to launch() in Gradio 6. We
+    # stash them on the Blocks object and the caller (main) reads them off.
+    ui = gr.Blocks(title="astrostack")
+    ui._astrostack_dark = bool(dark)  # type: ignore[attr-defined]
 
-    with gr.Blocks(**blocks_kwargs) as ui:
+    with ui:
         gr.Markdown(
             "# astrostack\n"
             "Local AI astronomy image stacker — calibrate, align, stack, "
@@ -738,11 +739,18 @@ def main():
     ui = build_ui(dark=not args.light)
     launch_kwargs = dict(server_name=args.host, server_port=args.port,
                          share=args.share)
-    # Gradio 6.x accepts `theme` on launch(); older versions accepted it on
-    # Blocks(). Try launch() first, fall back gracefully.
+    if getattr(ui, "_astrostack_dark", False):
+        launch_kwargs["css"] = DARK_CSS
+        launch_kwargs["js"] = FORCE_DARK_JS
+    # Gradio 6.x accepts theme/css/js on launch(); older versions wanted
+    # them on Blocks(). Try the new signature first, fall back gracefully.
     try:
         ui.queue().launch(theme=gr.themes.Soft(), **launch_kwargs)
     except TypeError:
+        # Older Gradio: drop the args it doesn't recognise and retry. Dark
+        # theme won't be applied on very old Gradio, but the app launches.
+        for k in ("theme", "css", "js"):
+            launch_kwargs.pop(k, None)
         ui.queue().launch(**launch_kwargs)
 
 
