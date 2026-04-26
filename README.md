@@ -64,7 +64,14 @@ pip install -e .
 -e .` so the correct CUDA build gets pulled in. See
 <https://pytorch.org/get-started/locally/>.
 
-Python 3.10+ required.
+Python 3.10–3.13 supported.
+
+> Earlier versions of this project depended on `basicsr` / `realesrgan`,
+> which fail to build from source on Python 3.13 due to a packaging bug
+> upstream. We now use [`spandrel`](https://github.com/chaiNNer-org/spandrel)
+> instead — pure Python, loads the same Real-ESRGAN weights, no compile
+> step. If you hit a `basicsr` build error, you're on an old checkout —
+> `git pull` and re-run `pip install -e .`.
 
 ---
 

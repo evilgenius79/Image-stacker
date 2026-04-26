@@ -1,11 +1,11 @@
 """AI enhancement of stacked images.
 
-Primary: Real-ESRGAN (RealESRGAN_x2plus / x4plus) with weights downloaded
-from the official xinntao/Real-ESRGAN GitHub releases on first run. Tiled
-inference keeps memory bounded.
+Primary backend: ``spandrel`` (pure-Python model loader from chaiNNer) loads
+Real-ESRGAN weights downloaded from the official xinntao/Real-ESRGAN GitHub
+releases. We do tiled inference ourselves to keep memory bounded.
 
-Fallback (no torch / no model / model fails): scikit-image wavelet denoise +
-unsharp mask. Always available.
+Fallback (no torch / no model / model fails): scikit-image wavelet denoise
++ unsharp mask. Always available.
 """
 
 from __future__ import annotations
@@ -72,9 +72,7 @@ def _pick_tile(img_shape, device: str) -> int:
     """Choose a sensible tile size. 0 disables tiling."""
     h, w = img_shape[:2]
     if device == "cpu":
-        # CPU is slow enough that tiling helps memory more than it hurts speed.
         return 256 if max(h, w) > 512 else 0
-    # GPU: tile only when the image would be unreasonably large.
     if max(h, w) <= 1024:
         return 0
     if max(h, w) <= 2048:
@@ -82,34 +80,74 @@ def _pick_tile(img_shape, device: str) -> int:
     return 400
 
 
-def _load_realesrgan(model_key: str, device: str, img_shape):
-    """Load Real-ESRGAN, returning (upsampler, scale) or raising."""
-    url, filename, scale = MODEL_REGISTRY[model_key]
-    weights = _download_weights(url, filename)
-
+def _load_model(weights_path: Path, device: str):
+    """Load weights via spandrel; returns a callable wrapper on (B,C,H,W) tensors."""
     import torch
-    from basicsr.archs.rrdbnet_arch import RRDBNet
-    from realesrgan import RealESRGANer
+    from spandrel import ModelLoader
 
-    model = RRDBNet(
-        num_in_ch=3, num_out_ch=3, num_feat=64,
-        num_block=23, num_grow_ch=32, scale=scale,
-    )
+    loader = ModelLoader(device=torch.device(device))
+    descriptor = loader.load_from_file(str(weights_path))
+    descriptor.eval()
+    if device == "cuda":
+        descriptor.model.half()
+    return descriptor
+
+
+def _to_dtype(t, half: bool):
+    return t.half() if half else t.float()
+
+
+def _tiled_infer(descriptor, img_chw: "np.ndarray", scale: int,
+                 tile: int, pad: int, device: str) -> "np.ndarray":
+    """Run inference, tiling spatially when ``tile > 0``.
+
+    img_chw: (3, H, W) float32 in [0, 1]. Returns (3, H*scale, W*scale).
+    """
+    import torch
+
     half = (device == "cuda")
-    tile = _pick_tile(img_shape, device)
-    log.info("Real-ESRGAN: scale=%d, device=%s, half=%s, tile=%d",
-             scale, device, half, tile)
-    upsampler = RealESRGANer(
-        scale=scale,
-        model_path=str(weights),
-        model=model,
-        tile=tile,
-        tile_pad=16,
-        pre_pad=0,
-        half=half,
-        device=torch.device(device),
-    )
-    return upsampler, scale
+    dev = torch.device(device)
+    _, h, w = img_chw.shape
+
+    if tile <= 0:
+        with torch.no_grad():
+            t = torch.from_numpy(img_chw).unsqueeze(0).to(dev)
+            t = _to_dtype(t, half)
+            out = descriptor(t)
+            return out.clamp(0, 1).float().squeeze(0).cpu().numpy()
+
+    out_h, out_w = h * scale, w * scale
+    out = np.zeros((3, out_h, out_w), dtype=np.float32)
+
+    n_y = (h + tile - 1) // tile
+    n_x = (w + tile - 1) // tile
+    for iy in range(n_y):
+        for ix in range(n_x):
+            y0 = iy * tile
+            x0 = ix * tile
+            y1 = min(y0 + tile, h)
+            x1 = min(x0 + tile, w)
+
+            # padded region (input space)
+            py0 = max(y0 - pad, 0)
+            px0 = max(x0 - pad, 0)
+            py1 = min(y1 + pad, h)
+            px1 = min(x1 + pad, w)
+
+            patch = img_chw[:, py0:py1, px0:px1]
+            with torch.no_grad():
+                t = torch.from_numpy(patch).unsqueeze(0).to(dev)
+                t = _to_dtype(t, half)
+                up = descriptor(t).clamp(0, 1).float().squeeze(0).cpu().numpy()
+
+            # crop the padded region back to the requested tile (in output space)
+            cy0 = (y0 - py0) * scale
+            cx0 = (x0 - px0) * scale
+            cy1 = cy0 + (y1 - y0) * scale
+            cx1 = cx0 + (x1 - x0) * scale
+            out[:, y0 * scale:y1 * scale, x0 * scale:x1 * scale] = \
+                up[:, cy0:cy1, cx0:cx1]
+    return out
 
 
 def enhance(
@@ -129,15 +167,24 @@ def enhance(
         img_in = img
 
     try:
-        upsampler, scale = _load_realesrgan(model, dev, img_in.shape)
-        bgr = (img_in[..., ::-1] * 255.0).clip(0, 255).astype(np.uint8)
-        out_bgr, _ = upsampler.enhance(bgr, outscale=scale)
-        if out_bgr is None:
-            raise RuntimeError("Real-ESRGAN returned no output.")
-        out = out_bgr[..., ::-1].astype(np.float32) / 255.0
+        url, filename, scale = MODEL_REGISTRY[model]
+        weights_path = _download_weights(url, filename)
+        descriptor = _load_model(weights_path, dev)
+
+        # spandrel tells us the actual scale; trust it over our registry hint.
+        actual_scale = getattr(descriptor, "scale", scale) or scale
+
+        chw = np.transpose(img_in.astype(np.float32), (2, 0, 1))
+        tile = _pick_tile(img_in.shape, dev)
+        log.info("Real-ESRGAN: scale=%d, device=%s, tile=%d",
+                 actual_scale, dev, tile)
+        out_chw = _tiled_infer(descriptor, chw, actual_scale, tile,
+                               pad=16, device=dev)
+        out = np.transpose(out_chw, (1, 2, 0))
+
         if not is_color:
             out = out.mean(axis=-1)
-        return np.clip(out, 0.0, 1.0)
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
     except Exception as e:
         if not fallback:
             raise

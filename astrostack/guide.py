@@ -205,4 +205,7 @@ Every step runs locally. The only network call is the one-time model weight
 download from the official `xinntao/Real-ESRGAN` GitHub release (~65 MB,
 cached at `~/.cache/astrostack/weights/`). Turn off AI enhancement to run
 fully offline after install.
+
+The Real-ESRGAN inference uses [`spandrel`](https://github.com/chaiNNer-org/spandrel)
+to load the weights — pure-Python, no `basicsr` build step.
 """
