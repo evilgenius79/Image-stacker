@@ -346,29 +346,48 @@ FORCE_DARK_JS = """
 """
 
 DARK_CSS = """
-/* Astrostack dark overrides — aggressive enough to win against Gradio 6
- * component defaults that don't always pick up ?__theme=dark uniformly. */
+/* Astrostack — deep blue background with orange accents.
+ *   bg deep:    #0a1628
+ *   bg block:   #14243f
+ *   bg input:   #0e1a2e
+ *   border:     #1f3559
+ *   text:       #dbeafe (blue-tinted white)
+ *   accent (primary): #f97316 (orange)
+ *   accent (link/secondary): #60a5fa (blue) */
 
 :root, body, .gradio-container {
-  --background-fill-primary: #0e1116;
-  --background-fill-secondary: #161b22;
-  --background-fill-primary_dark: #0e1116;
-  --background-fill-secondary_dark: #161b22;
-  --block-background-fill: #161b22;
-  --block-background-fill_dark: #161b22;
-  --body-background-fill: #0b0d12;
-  --body-background-fill_dark: #0b0d12;
-  --input-background-fill: #0e1116;
-  --input-background-fill_dark: #0e1116;
-  --color-accent-soft: #1f2733;
-  --border-color-primary: #2a3441;
-  --border-color-primary_dark: #2a3441;
-  --body-text-color: #e5e7eb;
-  --body-text-color_dark: #e5e7eb;
+  --background-fill-primary: #0e1a2e;
+  --background-fill-secondary: #14243f;
+  --background-fill-primary_dark: #0e1a2e;
+  --background-fill-secondary_dark: #14243f;
+  --block-background-fill: #14243f;
+  --block-background-fill_dark: #14243f;
+  --body-background-fill: #0a1628;
+  --body-background-fill_dark: #0a1628;
+  --input-background-fill: #0e1a2e;
+  --input-background-fill_dark: #0e1a2e;
+  --color-accent: #f97316;
+  --color-accent_dark: #f97316;
+  --color-accent-soft: #1d2e4d;
+  --color-accent-soft_dark: #1d2e4d;
+  --button-primary-background-fill: #f97316;
+  --button-primary-background-fill_dark: #f97316;
+  --button-primary-background-fill-hover: #fb923c;
+  --button-primary-background-fill-hover_dark: #fb923c;
+  --button-primary-text-color: #0a1628;
+  --button-primary-text-color_dark: #0a1628;
+  --border-color-primary: #1f3559;
+  --border-color-primary_dark: #1f3559;
+  --border-color-accent: #f97316;
+  --border-color-accent_dark: #f97316;
+  --body-text-color: #dbeafe;
+  --body-text-color_dark: #dbeafe;
+  --link-text-color: #60a5fa;
+  --link-text-color_dark: #60a5fa;
   color-scheme: dark;
 }
 
-body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !important; }
+body, .gradio-container { background: #0a1628 !important; color: #dbeafe !important; }
 .gradio-container, .gradio-container * { color-scheme: dark; }
 
 /* Generic blocks / forms / accordions / panels */
@@ -382,17 +401,17 @@ body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !import
 .gradio-container .accordion,
 .gradio-container .label-wrap,
 .gradio-container .wrap {
-  background: #161b22 !important;
-  border-color: #2a3441 !important;
-  color: #e5e7eb !important;
+  background: #14243f !important;
+  border-color: #1f3559 !important;
+  color: #dbeafe !important;
 }
 
-/* Accordion headers (collapsible sections) */
+/* Accordion headers */
 .gradio-container summary,
 .gradio-container .label-wrap > .label,
 .gradio-container .accordion .label-wrap {
-  background: #1a212b !important;
-  color: #e5e7eb !important;
+  background: #182c4d !important;
+  color: #dbeafe !important;
 }
 
 /* Inputs / textareas / selects */
@@ -400,9 +419,63 @@ body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !import
 .gradio-container textarea,
 .gradio-container select,
 .gradio-container .input-text {
-  background: #0e1116 !important;
-  color: #e5e7eb !important;
-  border-color: #2a3441 !important;
+  background: #0e1a2e !important;
+  color: #dbeafe !important;
+  border-color: #1f3559 !important;
+}
+
+/* Primary buttons -> orange */
+.gradio-container button.primary,
+.gradio-container .gr-button-primary,
+.gradio-container button[variant="primary"],
+.gradio-container .gradio-button.primary {
+  background: #f97316 !important;
+  color: #0a1628 !important;
+  border: 1px solid #ea580c !important;
+  font-weight: 600;
+}
+.gradio-container button.primary:hover,
+.gradio-container .gr-button-primary:hover,
+.gradio-container button[variant="primary"]:hover {
+  background: #fb923c !important;
+}
+
+/* Stop / cancel buttons keep red but with the rest of the dark palette */
+.gradio-container button.stop,
+.gradio-container button[variant="stop"] {
+  background: #b91c1c !important;
+  color: #fff !important;
+  border: 1px solid #7f1d1d !important;
+}
+
+/* Secondary buttons -> blue */
+.gradio-container button.secondary,
+.gradio-container button[variant="secondary"] {
+  background: #1e3a8a !important;
+  color: #dbeafe !important;
+  border: 1px solid #1e40af !important;
+}
+.gradio-container button.secondary:hover {
+  background: #2541a4 !important;
+}
+
+/* Selected tab indicator */
+.gradio-container .tab-nav button.selected,
+.gradio-container [role="tab"][aria-selected="true"] {
+  color: #f97316 !important;
+  border-bottom: 2px solid #f97316 !important;
+}
+
+/* Sliders -> orange thumb / fill */
+.gradio-container input[type="range"]::-webkit-slider-thumb { background: #f97316 !important; }
+.gradio-container input[type="range"]::-moz-range-thumb { background: #f97316 !important; }
+.gradio-container .slider-track-fill,
+.gradio-container .slider-fill { background: #f97316 !important; }
+
+/* Radio / checkbox selected -> orange */
+.gradio-container input[type="radio"]:checked,
+.gradio-container input[type="checkbox"]:checked {
+  accent-color: #f97316 !important;
 }
 
 /* Tables */
@@ -412,13 +485,12 @@ body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !import
 .gradio-container tr,
 .gradio-container td,
 .gradio-container th {
-  background: #161b22 !important;
-  color: #e5e7eb !important;
-  border-color: #2a3441 !important;
+  background: #14243f !important;
+  color: #dbeafe !important;
+  border-color: #1f3559 !important;
 }
 
-/* File upload list — cap height so a long upload list scrolls inside
- * the component instead of pushing the rest of the page off-screen. */
+/* File upload list — cap height */
 .gradio-container .file-preview,
 .gradio-container [data-testid="file"] .preview-wrap,
 .gradio-container .file-preview-holder,
@@ -428,11 +500,38 @@ body, .gradio-container { background: #0b0d12 !important; color: #e5e7eb !import
   overflow-y: auto !important;
 }
 
-/* Make the white "drop here" zone darker too */
+/* Drop zone */
 .gradio-container .upload-container,
 .gradio-container .file-upload {
-  background: #0e1116 !important;
+  background: #0e1a2e !important;
 }
+
+/* Inline code / kbd (e.g. the "cuda" pill in the header) */
+.gradio-container code,
+.gradio-container kbd,
+.gradio-container .markdown code {
+  background: #1d2e4d !important;
+  color: #f97316 !important;
+  border: 1px solid #1f3559 !important;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+/* Empty image placeholders */
+.gradio-container .image-container,
+.gradio-container .image-frame,
+.gradio-container .empty {
+  background: #0e1a2e !important;
+}
+
+/* Headings */
+.gradio-container h1, .gradio-container h2, .gradio-container h3 {
+  color: #f97316 !important;
+}
+
+/* Links */
+.gradio-container a { color: #60a5fa !important; }
 """
 
 
@@ -523,13 +622,12 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                                                    scale=1)
 
                     with gr.Column(scale=2):
-                        with gr.Row():
-                            stack_preview_pre = gr.Image(
-                                label="Pre-enhance (stacked only)",
-                                type="filepath", height=420)
-                            stack_preview = gr.Image(
-                                label="Final (post-enhance)",
-                                type="filepath", height=420)
+                        stack_preview = gr.Image(
+                            label="Final (post-enhance)",
+                            type="filepath", height=360)
+                        stack_preview_pre = gr.Image(
+                            label="Pre-enhance (stacked only)",
+                            type="filepath", height=240)
                         stack_download = gr.File(
                             label="Download full-resolution result")
                         stack_status = gr.Markdown("")
