@@ -136,15 +136,20 @@ def _run_stack(
 # ---------------------------------------------------------------------------
 
 def _load_into_editor(path: str | None):
-    """Load an image into the editor; returns full-res array, preview array, status."""
+    """Load an image into the editor.
+
+    Returns (full_arr, preview_float32, status). Both arrays are float32 in
+    [0, 1]; storing the preview as float32 avoids re-doing uint8↔float32
+    conversion on every slider release.
+    """
     if not path:
         return None, None, "No image loaded."
     p = Path(path)
     if not p.exists():
         return None, None, f"File not found: {p}"
     full = load_image(p)
-    preview = _downsample(full)
-    return full, _to_uint8(preview), f"Loaded `{p.name}` ({full.shape[1]}x{full.shape[0]})"
+    preview = _downsample(full).astype(np.float32, copy=False)
+    return full, preview, f"Loaded `{p.name}` ({full.shape[1]}x{full.shape[0]})"
 
 
 def _send_from_stack(stack_result_path: str | None):
@@ -174,10 +179,29 @@ def _slider_kwargs(values):
 
 
 def _live_preview(preview_arr, *slider_values):
+    """Apply the adjust chain to a cached float32 preview, return uint8."""
     if preview_arr is None:
         return None
-    img = preview_arr.astype(np.float32) / 255.0
-    return _to_uint8(adjust(img, **_slider_kwargs(slider_values)))
+    return _to_uint8(adjust(preview_arr, **_slider_kwargs(slider_values)))
+
+
+def _preview_and_hist(preview_arr, *slider_values):
+    """Single handler that produces both the live preview image and the
+    histogram. Saves a Gradio queue round-trip per slider release.
+    """
+    if preview_arr is None:
+        return None, _render_histogram(None, 0.0, 1.0,
+                                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    rendered = _to_uint8(adjust(preview_arr, **_slider_kwargs(slider_values)))
+    # Histogram only needs black/white global + per-channel for the lines.
+    kw = _slider_kwargs(slider_values)
+    hist = _render_histogram(
+        preview_arr,
+        kw["black_point"], kw["white_point"],
+        kw["black_r"], kw["black_g"], kw["black_b"],
+        kw["white_r"], kw["white_g"], kw["white_b"],
+    )
+    return rendered, hist
 
 
 def _export_full(full_arr, *args):
@@ -238,8 +262,7 @@ def _do_neutralize(preview_arr, *slider_values):
     """Compute per-channel offsets from preview and update black_r/g/b."""
     if preview_arr is None:
         return tuple(slider_values)
-    img = preview_arr.astype(np.float32) / 255.0
-    rgb = compute_background_offsets(img)
+    rgb = compute_background_offsets(preview_arr)
     values = list(slider_values)
     # Indices of black_r/g/b in SLIDER_KEYS
     idx_r = SLIDER_KEYS.index("black_r")
@@ -255,8 +278,7 @@ def _do_auto_stretch(preview_arr, *slider_values):
     """Set black_point, white_point, asinh from histogram percentiles."""
     if preview_arr is None:
         return tuple(slider_values)
-    img = preview_arr.astype(np.float32) / 255.0
-    new_vals = auto_stretch(img)
+    new_vals = auto_stretch(preview_arr)
     values = list(slider_values)
     for k, v in new_vals.items():
         if k in SLIDER_KEYS:
@@ -276,7 +298,8 @@ def _render_histogram(preview_arr, black, white, b_r, b_g, b_b, w_r, w_g, w_b):
         fig.patch.set_facecolor("#0b0d12")
         return fig
 
-    img = preview_arr.astype(np.float32) / 255.0
+    # preview_arr is float32 in [0, 1] (cached). No conversion needed.
+    img = preview_arr
     bins = 128
     if img.ndim == 3:
         colors = ("#ef4444", "#22c55e", "#3b82f6")
@@ -571,11 +594,7 @@ def build_ui(dark: bool = True) -> gr.Blocks:
 
                 def _on_load_full(full, preview, status):
                     defaults_t = _reset_sliders()
-                    rendered = _live_preview(preview, *defaults_t)
-                    hist = _render_histogram(
-                        preview, defaults_t[0], defaults_t[1],
-                        defaults_t[2], defaults_t[3], defaults_t[4],
-                        defaults_t[5], defaults_t[6], defaults_t[7])
+                    rendered, hist = _preview_and_hist(preview, *defaults_t)
                     return (full, preview, rendered, hist, status, *defaults_t)
 
                 send_to_editor_btn.click(
@@ -600,28 +619,23 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                              histogram_plot, editor_status, *slider_inputs],
                 )
 
-                # Live preview + histogram update when any slider releases.
+                # Live preview + histogram update on any slider release —
+                # one combined handler instead of two events.
                 for s in slider_inputs:
                     s.release(
-                        _live_preview,
+                        _preview_and_hist,
                         inputs=[editor_preview, *slider_inputs],
-                        outputs=[editor_preview_img],
-                    )
-                    s.release(
-                        _render_histogram,
-                        inputs=[editor_preview, black, white,
-                                black_r, black_g, black_b,
-                                white_r, white_g, white_b],
-                        outputs=[histogram_plot],
+                        outputs=[editor_preview_img, histogram_plot],
                     )
 
                 # Before/after toggle.
                 def _on_toggle_before(show, preview_arr, *slider_values):
-                    if not show:
-                        return _live_preview(preview_arr, *slider_values)
                     if preview_arr is None:
                         return None
-                    return preview_arr  # the unedited downsampled source
+                    if not show:
+                        return _live_preview(preview_arr, *slider_values)
+                    # preview_arr is float32 [0, 1]; convert for display.
+                    return _to_uint8(preview_arr)
                 show_before.change(
                     _on_toggle_before,
                     inputs=[show_before, editor_preview, *slider_inputs],
@@ -634,15 +648,9 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                     inputs=[builtin_preset],
                     outputs=slider_inputs,
                 ).then(
-                    _live_preview,
+                    _preview_and_hist,
                     inputs=[editor_preview, *slider_inputs],
-                    outputs=[editor_preview_img],
-                ).then(
-                    _render_histogram,
-                    inputs=[editor_preview, black, white,
-                            black_r, black_g, black_b,
-                            white_r, white_g, white_b],
-                    outputs=[histogram_plot],
+                    outputs=[editor_preview_img, histogram_plot],
                 )
 
                 # User preset load.
@@ -651,15 +659,9 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                     inputs=[user_preset, *slider_inputs],
                     outputs=slider_inputs,
                 ).then(
-                    _live_preview,
+                    _preview_and_hist,
                     inputs=[editor_preview, *slider_inputs],
-                    outputs=[editor_preview_img],
-                ).then(
-                    _render_histogram,
-                    inputs=[editor_preview, black, white,
-                            black_r, black_g, black_b,
-                            white_r, white_g, white_b],
-                    outputs=[histogram_plot],
+                    outputs=[editor_preview_img, histogram_plot],
                 )
 
                 # User preset save / delete.
@@ -680,15 +682,9 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                     inputs=[editor_preview, *slider_inputs],
                     outputs=slider_inputs,
                 ).then(
-                    _live_preview,
+                    _preview_and_hist,
                     inputs=[editor_preview, *slider_inputs],
-                    outputs=[editor_preview_img],
-                ).then(
-                    _render_histogram,
-                    inputs=[editor_preview, black, white,
-                            black_r, black_g, black_b,
-                            white_r, white_g, white_b],
-                    outputs=[histogram_plot],
+                    outputs=[editor_preview_img, histogram_plot],
                 )
 
                 # Background neutralize.
@@ -697,29 +693,17 @@ def build_ui(dark: bool = True) -> gr.Blocks:
                     inputs=[editor_preview, *slider_inputs],
                     outputs=slider_inputs,
                 ).then(
-                    _live_preview,
+                    _preview_and_hist,
                     inputs=[editor_preview, *slider_inputs],
-                    outputs=[editor_preview_img],
-                ).then(
-                    _render_histogram,
-                    inputs=[editor_preview, black, white,
-                            black_r, black_g, black_b,
-                            white_r, white_g, white_b],
-                    outputs=[histogram_plot],
+                    outputs=[editor_preview_img, histogram_plot],
                 )
 
                 reset_btn.click(
                     _reset_sliders, inputs=None, outputs=slider_inputs,
                 ).then(
-                    _live_preview,
+                    _preview_and_hist,
                     inputs=[editor_preview, *slider_inputs],
-                    outputs=[editor_preview_img],
-                ).then(
-                    _render_histogram,
-                    inputs=[editor_preview, black, white,
-                            black_r, black_g, black_b,
-                            white_r, white_g, white_b],
-                    outputs=[histogram_plot],
+                    outputs=[editor_preview_img, histogram_plot],
                 )
 
                 export_btn.click(

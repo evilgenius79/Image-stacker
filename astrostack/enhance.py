@@ -4,12 +4,21 @@ Primary backend: ``spandrel`` (pure-Python model loader from chaiNNer) loads
 Real-ESRGAN weights downloaded from the official xinntao/Real-ESRGAN GitHub
 releases. We do tiled inference ourselves to keep memory bounded.
 
+Integrity: SHA256 of every downloaded weight file is checked against a
+trust-on-first-use manifest at ``WEIGHTS_DIR/.manifest.json``. The first
+successful download seeds the manifest; later downloads must match or are
+rejected with a clear error. This catches a tampered URL or partial
+download — important because ``torch.load`` runs pickle and could execute
+arbitrary code if the file is malicious.
+
 Fallback (no torch / no model / model fails): scikit-image wavelet denoise
 + unsharp mask. Always available.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +29,7 @@ from .device import select_device
 log = logging.getLogger(__name__)
 
 WEIGHTS_DIR = Path.home() / ".cache" / "astrostack" / "weights"
+MANIFEST_FILE = WEIGHTS_DIR / ".manifest.json"
 
 # (download_url, cached_filename, scale)
 MODEL_REGISTRY = {
@@ -58,13 +68,71 @@ def _classical_enhance(img: np.ndarray, denoise_strength: float = 0.05) -> np.nd
     return np.clip(work.astype(np.float32), 0.0, 1.0)
 
 
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_manifest() -> dict:
+    try:
+        if MANIFEST_FILE.is_file():
+            with MANIFEST_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        log.warning("Failed to read weights manifest (%s); treating as empty.", e)
+    return {}
+
+
+def _save_manifest(data: dict) -> None:
+    try:
+        WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+        with MANIFEST_FILE.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+    except Exception as e:
+        log.warning("Failed to write weights manifest: %s", e)
+
+
 def _download_weights(url: str, filename: str) -> Path:
+    """Download (if missing) and verify model weights against the TOFU manifest.
+
+    Raises RuntimeError on hash mismatch with previously-recorded value.
+    """
     import torch
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
     dest = WEIGHTS_DIR / filename
+
     if not dest.exists():
         log.info("Downloading %s -> %s", url, dest)
         torch.hub.download_url_to_file(url, str(dest), progress=True)
+
+    digest = _sha256(dest)
+    manifest = _load_manifest()
+    recorded = manifest.get(filename)
+
+    if recorded is None:
+        # Trust-on-first-use: record the hash for later runs.
+        log.info("Recording SHA256 for %s: %s", filename, digest)
+        manifest[filename] = digest
+        _save_manifest(manifest)
+    elif recorded != digest:
+        # Different hash than we've seen before — refuse to load and remove
+        # the file so a subsequent run will re-download.
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"SHA256 mismatch for {filename}: expected {recorded}, "
+            f"got {digest}. Refusing to load weights — possible tampering "
+            f"or corrupted download. The bad file has been removed; the "
+            f"next run will retry. To accept a new upstream version, "
+            f"delete {MANIFEST_FILE}."
+        )
     return dest
 
 
