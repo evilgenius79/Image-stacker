@@ -169,10 +169,36 @@ def _reset_sliders():
 # UI assembly
 # ---------------------------------------------------------------------------
 
-def build_ui() -> gr.Blocks:
+FORCE_DARK_JS = """
+() => {
+  const url = new URL(window.location);
+  if (url.searchParams.get('__theme') !== 'dark') {
+    url.searchParams.set('__theme', 'dark');
+    window.location.href = url.toString();
+  }
+}
+"""
+
+DARK_CSS = """
+:root, body, .gradio-container {
+  --background-fill-primary: #0e1116;
+  --background-fill-secondary: #161b22;
+  --color-accent-soft: #1f2733;
+  --border-color-primary: #2a3441;
+}
+.gradio-container { background: #0b0d12 !important; }
+.dark .gradio-container { background: #0b0d12 !important; }
+"""
+
+
+def build_ui(dark: bool = True) -> gr.Blocks:
     device_default = select_device("auto")
 
-    with gr.Blocks(title="astrostack") as ui:
+    blocks_kwargs = dict(title="astrostack", css=DARK_CSS if dark else None)
+    if dark:
+        blocks_kwargs["js"] = FORCE_DARK_JS
+
+    with gr.Blocks(**blocks_kwargs) as ui:
         gr.Markdown(
             "# astrostack\n"
             "Local AI astronomy image stacker — calibrate, align, stack, "
@@ -381,17 +407,19 @@ def main():
     ap.add_argument("--port", type=int, default=7860)
     ap.add_argument("--share", action="store_true",
                     help="Create a public Gradio share link.")
+    ap.add_argument("--light", action="store_true",
+                    help="Use light theme (default is dark).")
     ap.add_argument("-v", "--verbose", action="count", default=0)
     args = ap.parse_args()
 
     level = logging.WARNING - 10 * min(args.verbose, 2)
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
-    ui = build_ui()
+    ui = build_ui(dark=not args.light)
     launch_kwargs = dict(server_name=args.host, server_port=args.port,
                          share=args.share)
     # Gradio 6.x accepts `theme` on launch(); older versions accepted it on
-    # Blocks(). Pass it on launch and ignore if unsupported.
+    # Blocks(). Try launch() first, fall back gracefully.
     try:
         ui.queue().launch(theme=gr.themes.Soft(), **launch_kwargs)
     except TypeError:
