@@ -172,7 +172,7 @@ def _reset_sliders():
 def build_ui() -> gr.Blocks:
     device_default = select_device("auto")
 
-    with gr.Blocks(title="astrostack", theme=gr.themes.Soft()) as ui:
+    with gr.Blocks(title="astrostack") as ui:
         gr.Markdown(
             "# astrostack\n"
             "Local AI astronomy image stacker — calibrate, align, stack, "
@@ -388,7 +388,14 @@ def main():
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
     ui = build_ui()
-    ui.queue().launch(server_name=args.host, server_port=args.port, share=args.share)
+    launch_kwargs = dict(server_name=args.host, server_port=args.port,
+                         share=args.share)
+    # Gradio 6.x accepts `theme` on launch(); older versions accepted it on
+    # Blocks(). Pass it on launch and ignore if unsupported.
+    try:
+        ui.queue().launch(theme=gr.themes.Soft(), **launch_kwargs)
+    except TypeError:
+        ui.queue().launch(**launch_kwargs)
 
 
 if __name__ == "__main__":
