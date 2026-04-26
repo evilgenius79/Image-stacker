@@ -218,23 +218,46 @@ A few quick rules of thumb:
 
 ## The Editor tab
 
-Applied in this order; every stage is an identity op at its default value:
+### One-click helpers
 
-1. **Black / white point** — histogram clip + rescale. Raise black to kill
-   background fog; drop white to control blown highlights.
-2. **Asinh stretch** — inverse-hyperbolic-sine compression. `0` off; `1`
-   aggressive. The single most useful astro slider: brightens faint
-   nebulosity without clipping bright stars. Try `0.4` first.
-3. **Gamma** — power curve. `<1` brightens shadows, `>1` darkens.
+- **Auto stretch** — sets black/white/asinh from histogram percentiles.
+  Best starting point.
+- **Neutralize background** — removes per-channel colour casts (light
+  pollution etc.) by sampling the dimmest pixels per channel.
+- **Built-in presets** dropdown — None / Gentle / Standard / Aggressive /
+  Extreme. One-click slider tunings.
+- **User presets** — save the current slider state under a name; load or
+  delete any time. Stored at `~/.config/astrostack/presets.json`.
+- **Show original (Before)** — checkbox flips the live preview to the
+  unedited image for instant before/after comparison.
+- **Histogram** — live per-channel histogram with current black/white
+  drawn as dashed lines.
+
+### Adjustment chain (every stage is identity at its default)
+
+1. **Levels — black / white point** with optional **per-channel R/G/B**
+   offsets in an accordion.
+2. **Asinh stretch** — `0` off, `1` aggressive. The single most useful
+   astro slider; try `0.4` first.
+3. **Gamma** — power curve.
 4. **Brightness** — additive offset in `[-0.5, 0.5]`.
-5. **Contrast** — multiplier around mid-grey. `1` = identity.
-6. **Saturation** — `0` = grayscale, `1` = identity, `>1` boosts colour.
-   Ignored on mono.
-7. **Sharpen** — unsharp-mask amount. `0` off. Above `~1.5` expect ringing.
+5. **Contrast** — multiplier around mid-grey.
+6. **Saturation** — `0` greyscale, `1` identity, `>1` boost. Ignored on mono.
+7. **Star size reduction** — masked morphological erosion of small bright
+   peaks. Useful in dense fields where stars overpower nebulosity.
+8. **Sharpen** — unsharp-mask amount. Above `~1.5` expect ringing.
+9. **Crop** — margin sliders (left / top / right / bottom %).
 
 The live preview is downsampled (longest edge ≤ 1280 px) for slider
 responsiveness. **Export full-resolution** re-runs the identical chain on
 the original-size image and gives you a download.
+
+### Frame quality analysis
+
+On the Stack tab, **Analyze loaded frames** runs star detection and a
+Gaussian FWHM fit per file and shows a table of `Stars`, `FWHM (px)`,
+`Background`, and a quality `Score` so you can spot duds or pick a
+reference.
 
 ---
 
@@ -251,7 +274,15 @@ the original-size image and gives you a download.
 | FITS preview missing | Browsers can't render FITS | The UI auto-writes a PNG preview alongside. |
 
 Model weights cache: `~/.cache/astrostack/weights/`. Delete to force
-re-download.
+re-download. The weight integrity is checked against
+`~/.cache/astrostack/weights/.manifest.json` (trust-on-first-use SHA256);
+if a later download mismatches, the file is removed and the run aborts —
+delete the manifest if you intentionally want to accept a new upstream
+version.
+
+User config: `~/.config/astrostack/settings.json` (last-used run options)
+and `~/.config/astrostack/presets.json` (saved editor presets). Both are
+plain JSON; safe to edit by hand.
 
 ---
 
@@ -264,11 +295,13 @@ astrostack/
 ├── calibrate.py   # master dark/bias/flat construction + application
 ├── cli.py         # click-based CLI entry point
 ├── device.py      # CUDA / MPS / CPU selection
-├── editor.py      # post-processing adjustments (pure numpy)
-├── enhance.py     # Real-ESRGAN with classical fallback
+├── editor.py      # post-processing chain + auto-stretch + presets
+├── enhance.py     # Real-ESRGAN via spandrel + SHA256 verification
 ├── guide.py       # help content shown in the web UI
-├── io.py          # multi-format load/save
+├── io.py          # multi-format load/save + thumbnail filter
 ├── pipeline.py    # end-to-end orchestration
+├── quality.py     # per-frame star count + FWHM + quality score
+├── settings.py    # persistent JSON settings + user presets
 ├── stack.py       # mean / median / sigma-clipped stacking
 └── webui.py       # Gradio app (3 tabs: Stack, Editor, Guide)
 ```
